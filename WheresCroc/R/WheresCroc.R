@@ -86,8 +86,8 @@ fillTransmissionMatrix <- function(edges, n_waterholes) {
   
   return(transmission_matrix)
 }
-makeMove <- function(moveInfo, readings, positions, edges, probs) {
-  options <- getOptions(positions[3], edges)
+makeMove =function(moveInfo,readings,positions,edges,probs) {
+  options=getOptions(positions[3],edges)
   
   # Check if transmission matrix exists in memory, if not create it
   if (is.null(moveInfo$mem$transmission_matrix)) {
@@ -97,56 +97,46 @@ makeMove <- function(moveInfo, readings, positions, edges, probs) {
   
   # Use the stored transmission matrix
   transmission_matrix <- moveInfo$mem$transmission_matrix
-  
-  # Calculate emission probabilities
-  probabilitesSal <- dnorm(readings[1], probs$salinity[, 1], probs$salinity[, 2])
-  probabilitesPho <- dnorm(readings[2], probs$phosphate[, 1], probs$phosphate[, 2])
-  probabilitesNitro <- dnorm(readings[3], probs$nitrogen[, 1], probs$nitrogen[, 2])
-  
+  print("Move 1 options (plus 0 for search):")
+  print("Move 1 Probs ):")
+  probabilitesSal <- dnorm(readings[1],probs$salinity[,1], probs$salinity[,2])
+  probabilitesPho <- dnorm(readings[2],probs$phosphate[,1], probs$phosphate[,2])
+  probabilitesNitro <- dnorm(readings[3],probs$nitrogen[,1], probs$nitrogen[,2])
   emissionsProb <- probabilitesSal * probabilitesPho * probabilitesNitro
-  
-  # Set emissions to 0 for known positions (NaN for visited, negative for already found)
-  for (i in positions) {
-    if (i < 0) {
-      emissionsProb[abs(i)] <- 1  # Mark this position as certain
-    } else if (!is.na(i)) {
-      emissionsProb[i] <- 0  # This position is not a candidate
-    }
+  for (i in positions){
+    if (i <0)  emissionsProb[abs(i)] = 1
+    else if (!is.na(i))  emissionsProb[i]= 0
   }
   
-  # Normalize probabilities
-  normProbEmission <- emissionsProb / sum(emissionsProb)
+  normProbEmisson = emissionsProb/sum(emissionsProb)
+  #print(normProbEmisson)
+  #print(which.max(normProbEmisson))
+  print(transmission_matrix)
+  #print("Move 1 Points ):")
+  #print(points)
+  print("Move 1 Readings ):")
+  # print(readings)
+  #print("Move 1 positions ):")
+  #print(positions)
+  mv1=readline("Move 1: ")
   
-  # Identify the most probable waterhole
-  most_probable_index <- which.max(normProbEmission)
-  most_probable_waterhole <- which(normProbEmission == normProbEmission[most_probable_index])
-  
-  # Print information for debugging
-  print("Most Probable Waterhole: ")
-  print(most_probable_waterhole)
-  
-  # Find the path to the most probable waterhole using BFS
-  path <- bfs(edges, start_node = positions[3], target_node = most_probable_waterhole)
-  
-  # If a path was found, make moves along that path
-  if (length(path) > 0) {
-    for (i in seq_along(path)[-1]) {  # Skip the first node since it's the start
-      mv <- path[i]
-      
-      # Ensure mv is a valid option before moving
-      if (mv %in% options) {
-        moveInfo$moves <- c(moveInfo$moves, mv)  # Append the move
-        options <- getOptions(mv, edges)  # Update options based on the new position
-        print(paste("Moving to:", mv))
-      } else {
-        warning("Invalid move detected. Stopping movement.")
-        break
-      }
-    }
-  } else {
-    print("No path found to the most probable waterhole.")
+  if (mv1=="q") {stop()}
+  if (!mv1 %in% options && mv1 != 0) {
+    warning ("Invalid move. Search ('0') specified.")
+    mv1=0
   }
-  
+  if (mv1!=0) {
+    options=getOptions(mv1,edges)
+  }
+  #print("Move 2 options (plus 0 for search):")
+  # print(options)
+  mv2=readline("Move 2: ")
+  if (mv2=="q") {stop()}
+  if (!mv1 %in% options && mv1 != 0) {
+    warning ("Invalid move. Search ('0') specified.")
+    mv2=0
+  }
+  moveInfo$moves=c(mv1,mv2)
   return(moveInfo)
 }
 
