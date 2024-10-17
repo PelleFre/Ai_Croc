@@ -47,96 +47,119 @@ manualWC=function(moveInfo,readings,positions,edges,probs) {
   moveInfo$moves=c(mv1,mv2)
   return(moveInfo)
 }
-fillTransmissionMatrix <- function(edges, n_waterholes) {
-  transmission_matrix <- matrix(0, nrow = n_waterholes, ncol = n_waterholes)
-  
-  # Count the number of neighbors for each node
-  neighbor_counts <- rep(0, n_waterholes)
-  
-  for (edge in 1:nrow(edges)) {
-    from <- edges[edge, 1]
-    to <- edges[edge, 2]
+
+bfs <- function(edges, startNode, targetNode) {
+  # Create an adjacency list from the edge list
+  adjList <- list()
+  for (i in 1:nrow(edges)) {
+    from <- edges[i, 1]
+    to <- edges[i, 2]
     
-    # Mark neighbors
-    transmission_matrix[from, to] <- 1
-    transmission_matrix[to, from] <- 1
-    neighbor_counts[from] <- neighbor_counts[from] + 1
-    neighbor_counts[to] <- neighbor_counts[to] + 1
+    # Add the edge in both directions (since it's an undirected graph)
+    adjList[[as.character(from)]] <- c(adjList[[as.character(from)]], to)
+    adjList[[as.character(to)]] <- c(adjList[[as.character(to)]], from)
   }
   
-  # Assign equal probabilities for staying and moving to neighbors
-  for (i in 1:nrow(transmission_matrix)) {
-    num_neighbors <- neighbor_counts[i]
+  # BFS initialization
+  queue <- list(startNode)
+  visited <- c(startNode)
+  parent <- list()  # To reconstruct the path
+  parent[[as.character(startNode)]] <- NULL
+  
+  while (length(queue) > 0) {
+    current <- queue[[1]]  # Get the front of the queue
+    queue <- queue[-1]      # Dequeue the front element
     
-    if (num_neighbors > 0) {
-      # Equal probability to stay and move to each neighbor
-      prob_move = 1 / (num_neighbors + 1)
-      
-      # Set the probability of staying at the current node
-      transmission_matrix[i, i] <- prob_move
-      
-      # Set the probability for each neighbor
-      for (j in 1:ncol(transmission_matrix)) {
-        if (transmission_matrix[i, j] == 1) {
-          transmission_matrix[i, j] <- prob_move
+    if (!is.null(targetNode) && current == targetNode) {
+      break
+    }
+    # Explore neighbors
+    neighbors <- adjList[[as.character(current)]]
+    
+    if (!is.null(neighbors)) {
+      for (neighbor in neighbors) {
+        if (!neighbor %in% visited) {
+          visited <- c(visited, neighbor)
+          parent[[as.character(neighbor)]] <- current  # Keep track of the parent
+          queue <- c(queue, neighbor)  # Enqueue the neighbor
         }
       }
     }
   }
   
-  return(transmission_matrix)
-}
-makeMove =function(moveInfo,readings,positions,edges,probs) {
-  options=getOptions(positions[3],edges)
-  
-  # Check if transmission matrix exists in memory, if not create it
-  if (is.null(moveInfo$mem$transmission_matrix)) {
-    edges <- getEdges()
-    moveInfo$mem$transmission_matrix <- fillTransmissionMatrix(edges, 40)
+  if (!is.null(targetNode) && targetNode %in% visited) {
+    path <- c()
+    current <- targetNode
+    while (!is.null(current)) {
+      path <- c(current, path)
+      current <- parent[[as.character(current)]]
+    }
+    return(c(path,0))  # Return the path from startNode to targetNode
   }
+}
+getTransProb <- function(node, edges){
+  neighbors <- getOptions(node, edges)
+  return (1/length(neighbors))
+}
+
+forwardAlg <- function(node, prevObservation, edges, emissions){
+  neighbors <- getOptions(node, edges)
+  probSum <- 0
   
-  # Use the stored transmission matrix
-  transmission_matrix <- moveInfo$mem$transmission_matrix
-  print("Move 1 options (plus 0 for search):")
-  print("Move 1 Probs ):")
+  for (i in neighbors) {
+    probSum <- probSum + getTransProb(i, edges) * prevObservation[i]
+  }
+  newEstimation <- probSum * emissions[node]
+  return(newEstimation)
+  
+}
+getEProb <- function(readings, probs, positions){
+  
   probabilitesSal <- dnorm(readings[1],probs$salinity[,1], probs$salinity[,2])
   probabilitesPho <- dnorm(readings[2],probs$phosphate[,1], probs$phosphate[,2])
   probabilitesNitro <- dnorm(readings[3],probs$nitrogen[,1], probs$nitrogen[,2])
   emissionsProb <- probabilitesSal * probabilitesPho * probabilitesNitro
-  for (i in positions){
-    if (i <0)  emissionsProb[abs(i)] = 1
+  for (i in positions[1:2]){
+    if (is.na(i)) print("Wanderer down")
+    else if (i < 0)  emissionsProb[abs(i)] = 1
     else if (!is.na(i))  emissionsProb[i]= 0
   }
+  return(emissionsProb/sum(emissionsProb))
+}
+initialProb <- function(positions){
+  unDead <- c()
+  if(positions[1] > 0) unDead <- c(unDead, positions[1]) 
+  if(positions[2] > 0) unDead <- c(unDead, positions[2]) 
+  initProb <- replicate(40,1/(40-length(unDead)))
+  for (i in unDead)  initProb[i] <- 0
+  return(initProb)
+}
+makeMove <-function(moveInfo,readings,positions,edges,probs) {
+  options=getOptions(positions[3],edges)
+  status = moveInfo[["mem"]][["status"]]
+  # check if new game
+  if (status == 0 || status == 1) {
+    moveInfo[["mem"]][["prevObservation"]] <- initialProb(positions)
+  }
+  prevObservation <- moveInfo[["mem"]][["prevObservation"]]
+  eProbNorm <- getEProb(readings, probs, positions)
   
-  normProbEmisson = emissionsProb/sum(emissionsProb)
-  #print(normProbEmisson)
-  #print(which.max(normProbEmisson))
-  print(transmission_matrix)
-  #print("Move 1 Points ):")
-  #print(points)
-  print("Move 1 Readings ):")
-  # print(readings)
-  #print("Move 1 positions ):")
-  #print(positions)
-  mv1=readline("Move 1: ")
+  newEst <- replicate(40, 0)
+  # compute the probabilities for each node
+  for (i in 1:length(newEst)) {
+    newEst[i] <- forwardAlg(i, prevObservation, edges, eProbNorm)
+  }
   
-  if (mv1=="q") {stop()}
-  if (!mv1 %in% options && mv1 != 0) {
-    warning ("Invalid move. Search ('0') specified.")
-    mv1=0
-  }
-  if (mv1!=0) {
-    options=getOptions(mv1,edges)
-  }
-  #print("Move 2 options (plus 0 for search):")
-  # print(options)
-  mv2=readline("Move 2: ")
-  if (mv2=="q") {stop()}
-  if (!mv1 %in% options && mv1 != 0) {
-    warning ("Invalid move. Search ('0') specified.")
-    mv2=0
-  }
-  moveInfo$moves=c(mv1,mv2)
+  newEst <- newEst/sum(newEst)
+  estCroc <- which.max(newEst)
+  
+  path <- bfs(edges,positions[3],estCroc)
+
+  if (length(path)>2) moveInfo$moves <- c(path[2],path[3])
+  else moveInfo$moves <- c(path[1],path[2])
+ 
+  moveInfo[['mem']][["prevObservation"]] <- newEst
+  moveInfo[["mem"]][["status"]] <- 2
   return(moveInfo)
 }
 
