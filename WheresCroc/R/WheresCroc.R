@@ -47,9 +47,8 @@ manualWC=function(moveInfo,readings,positions,edges,probs) {
   moveInfo$moves=c(mv1,mv2)
   return(moveInfo)
 }
-
+"Does a breadth-first search on the graph in order to find a path"
 bfs <- function(edges, startNode, targetNode) {
-  # Create an adjacency list from the edge list
   adjList <- list()
   for (i in 1:nrow(edges)) {
     from <- edges[i, 1]
@@ -60,28 +59,26 @@ bfs <- function(edges, startNode, targetNode) {
     adjList[[as.character(to)]] <- c(adjList[[as.character(to)]], from)
   }
   
-  # BFS initialization
   queue <- list(startNode)
   visited <- c(startNode)
-  parent <- list()  # To reconstruct the path
+  parent <- list() 
   parent[[as.character(startNode)]] <- NULL
   
   while (length(queue) > 0) {
-    current <- queue[[1]]  # Get the front of the queue
-    queue <- queue[-1]      # Dequeue the front element
+    current <- queue[[1]] 
+    queue <- queue[-1]     
     
     if (!is.null(targetNode) && current == targetNode) {
       break
     }
-    # Explore neighbors
     neighbors <- adjList[[as.character(current)]]
     
     if (!is.null(neighbors)) {
       for (neighbor in neighbors) {
         if (!neighbor %in% visited) {
           visited <- c(visited, neighbor)
-          parent[[as.character(neighbor)]] <- current  # Keep track of the parent
-          queue <- c(queue, neighbor)  # Enqueue the neighbor
+          parent[[as.character(neighbor)]] <- current 
+          queue <- c(queue, neighbor) 
         }
       }
     }
@@ -94,14 +91,15 @@ bfs <- function(edges, startNode, targetNode) {
       path <- c(current, path)
       current <- parent[[as.character(current)]]
     }
-    return(c(path,0))  # Return the path from startNode to targetNode
+    return(c(path,0)) 
   }
 }
+"returns the transistion probabilities on each node"
 getTransProb <- function(node, edges){
   neighbors <- getOptions(node, edges)
   return (1/length(neighbors))
 }
-
+"calculates the new estimation of where the croc is by using the emissions and the transistion probabilities"
 forwardAlg <- function(node, prevObservation, edges, emissions){
   neighbors <- getOptions(node, edges)
   probSum <- 0
@@ -113,6 +111,7 @@ forwardAlg <- function(node, prevObservation, edges, emissions){
   return(newEstimation)
   
 }
+"calculates the normalised emission probabilities from our readings"
 getEProb <- function(readings, probs, positions){
   
   probabilitesSal <- dnorm(readings[1],probs$salinity[,1], probs$salinity[,2])
@@ -120,12 +119,13 @@ getEProb <- function(readings, probs, positions){
   probabilitesNitro <- dnorm(readings[3],probs$nitrogen[,1], probs$nitrogen[,2])
   emissionsProb <- probabilitesSal * probabilitesPho * probabilitesNitro
   for (i in positions[1:2]){
-    if (is.na(i)) print("Wanderer down")
+    if (is.na(i)) print("")
     else if (i < 0)  emissionsProb[abs(i)] = 1
     else if (!is.na(i))  emissionsProb[i]= 0
   }
   return(emissionsProb/sum(emissionsProb))
 }
+"createsn an initioal probability vector"
 initialProb <- function(positions){
   unDead <- c()
   if(positions[1] > 0) unDead <- c(unDead, positions[1]) 
@@ -134,25 +134,22 @@ initialProb <- function(positions){
   for (i in unDead)  initProb[i] <- 0
   return(initProb)
 }
+"Our main function to determine the moves our ranger should take by calling our part-functions and applying the HMM"
 makeMove <-function(moveInfo,readings,positions,edges,probs) {
   options=getOptions(positions[3],edges)
   status = moveInfo[["mem"]][["status"]]
-  # check if new game
   if (status == 0 || status == 1) {
     moveInfo[["mem"]][["prevObservation"]] <- initialProb(positions)
   }
   prevObservation <- moveInfo[["mem"]][["prevObservation"]]
   eProbNorm <- getEProb(readings, probs, positions)
-  
   newEst <- replicate(40, 0)
-  # compute the probabilities for each node
+  
   for (i in 1:length(newEst)) {
     newEst[i] <- forwardAlg(i, prevObservation, edges, eProbNorm)
   }
-  
   newEst <- newEst/sum(newEst)
   estCroc <- which.max(newEst)
-  
   path <- bfs(edges,positions[3],estCroc)
 
   if (length(path)>2) moveInfo$moves <- c(path[2],path[3])
